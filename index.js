@@ -7,24 +7,15 @@ const express = require('express')
 const { importPost } = require("./modules/post.js")
 const fs = require("node:fs")
 const app = express();
+const { execSync } = require('child_process');
 
 app.use(express.json());
+
 
 (async () => {
   const { location } = await Location()
   const wifi = await WiFi()
-  try {
-    await register({
-      lat: location.lat.toString(),
-      lng: location.lng.toString(),
-      nickname: config.nickname,
-      operator: config.operator,
-      ssid: wifi.ssid,
-      macAddress: wifi.macAddress
-    })
-  } catch {
 
-  }
 
 
   app.get('/_openherd/outbox', (req, res) => {
@@ -46,31 +37,66 @@ app.use(express.json());
     })
     res.json({ ok: true })
   })
-
-  const server = app.listen(3009, () => {
-    const port = server.address().port
-    bonjour.publish({ name: 'OpenHerd Beacon', type: 'http', port });
-    console.log(`Relay listening on port ${port}`)
+  app.all('/*', (req, res) => {
+    res.send(require("./modules/dashboard")())
   })
-  async function sync() {
-    config.bootstrappingPeers.map(async peer => {
-      try {
-        await fetch(`${peer}/_openherd/inbox`, {
-          method: "POST",
-          body: JSON.stringify(fs.readdirSync("./.posts").map(post => JSON.parse(fs.readFileSync("./.posts/" + post, "utf8"))))
-        });
-        (await (await fetch(`${peer}/_openherd/outbox`)).json()).map(async post => {
-          try {
-            await importPost(post)
-          } catch (e) {
-            console.error(e)
-          }
-        })
-      } catch {
+  const server = app.listen(3009, async () => {
+    const port = server.address().port
+    bonjour.publish({ name: 'openherd-relay', type: 'openherd', port, protocol: "tcp" });
+    console.log(`Relay listening on port ${port}`)
+    async function sync() {
+      config.bootstrappingPeers.map(async peer => {
+        try {
+          await fetch(`${peer}/_openherd/inbox`, {
+            method: "POST",
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(fs.readdirSync("./.posts").map(post => JSON.parse(fs.readFileSync("./.posts/" + post, "utf8"))))
+          });
+          (await (await fetch(`${peer}/_openherd/outbox`)).json()).map(async post => {
+            try {
+              await importPost(post)
+            } catch (e) {
+              console.error(e)
+            }
+          });
+        } catch {
 
-      }
+        }
 
-    })
+      })
+    }
+    setInterval(sync, 1000 * 60 * 5)
+    sync()
+
+    try {
+      await register({
+        lat: location.lat.toString(),
+        lng: location.lng.toString(),
+        nickname: config.nickname,
+        operator: config.operator,
+        notes: config.notes,
+        ssid: wifi.ssid,
+        macAddress: wifi.macAddress
+      })
+    } catch {
+
+    }
+  function startDiscovery() {
+    try {
+      execSync(`${process.argv[0]} modules/discovery`);
+    } catch (error) {
+      console.error('Error running discovery module:', error.message);
+    }
   }
-  setInterval(sync, 1000 * 60 * 5)
+
+  setInterval(startDiscovery, 60 * 1000);
+  startDiscovery();
+  })
+
+
+
+
+
 })();
