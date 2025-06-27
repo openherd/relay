@@ -8,6 +8,6 @@ module.exports = {
     nickname: "Library Relay",
     operator: "dispherical.com",
     notes: "This is ran by the student group.",
-    beaconURL: "https://beacon.openherd.dispherical.com",
+    beaconURL: "https://beacon.openherd.network",
     bootstrappingPeers: ["https://openherd.dispherical.com"]
 }
